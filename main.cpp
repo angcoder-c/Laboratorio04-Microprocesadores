@@ -7,16 +7,17 @@
  */
 
 #include <iostream>
+#include <string>
 #include <cmath>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <cstdlib>
 #include <vector>
+#include <tuple>
 // para medir el tiempo de ejecucion
-#include <chrono>
+#include <ctime>
 
 using namespace std;
-using namespace std::chrono;
 
 // CODIGO EXTRAIDO DEL LABORATORIO 03
 // https://github.com/angcoder-c/Laboratorio3-Microprocesadores/blob/main/main.cpp
@@ -76,8 +77,7 @@ bool validarInput (string input) {
     return valid;
 }
 
-int applyOps (string opcode, int op1, int op2, bool invert) {
-    cout << "\n" << opcode  << " " << op1 << " " << op2 << " " << invert<< endl;
+tuple<int, string> applyOps (string opcode, int op1, int op2, bool invert) {
     /*
     000 → Suma
     001 → Resta
@@ -88,30 +88,28 @@ int applyOps (string opcode, int op1, int op2, bool invert) {
      */
     int result = 0;
     if (opcode == "000") {
-        result = op1 + op2;
+        return tuple<int, string>(op1 + op2, "EXITOSO");
     } else if (opcode == "001") {
         if (invert) {
             result = op2 - op1;
         } else {
             result = op1 - op2;
         }
-
+        return tuple<int, string>(result, "EXITOSO");;
     } else if (opcode == "010") {
-        result = op1 * op2;
+        return tuple<int, string>(op1 * op2, "EXITOSO");
     } else if (opcode == "011") {
             if (invert) {
                 if (op1 == 0) {
-                    cout << "ERROR DIVISION POR CERO" << endl;
-                    return NULL;
+                    return tuple<int, string>(NULL, "ERROR DIVISION POR CERO");
                 } else {
-                    result = op2 / op1;
+                    return tuple<int, string>(op2 / op1, "EXITOSO");
                 }
             } else {
                 if (op2 == 0) {
-                    cout << "ERROR DIVISION POR CERO" << endl;
-                    return NULL;
+                    return tuple<int, string>(NULL, "ERROR DIVISION POR CERO");
                 } else {
-                    result = op1 / op2;
+                    return tuple<int, string>(op1 / op2, "EXITOSO");
                 }
             }
     } else if (opcode == "101") {
@@ -120,17 +118,16 @@ int applyOps (string opcode, int op1, int op2, bool invert) {
         } else {
             result = pow(op1, op2);
         }
+        return tuple<int, string>(result, "EXITOSO");
     } else if (opcode == "110") {
         if (invert) {
             result = op2 % op1;
         } else {
             result = op1 % op2;
         }
-    } else {
-        cout << "ERROR OPERACION NO SOPORTADA" << endl;
-        return NULL;
+        return tuple<int, string>(result, "EXITOSO");
     }
-    return result;
+    return tuple<int, string>(NULL, "ERROR OPERACION NO SOPORTADA");
 }
 
 vector<string> split(string s, char delim) {
@@ -156,6 +153,40 @@ vector<string> split(string s, char delim) {
 // =========================================================================
 
 
+string processInstruction (string input, clock_t init) {
+    if (!validarInput(input)) {
+        return "ERROR ENTRADA INVALIDA";
+    }
+    // OBTENER PARAMETROS DE LA INSTRUCCION DE 8 BITS
+    string opcode = getOpCode(input);
+    bool invert = opInvert(input);
+    int op1 = getOp1(input);
+    int op2 = getOp2(input);
+    tuple<int, string> result = applyOps(opcode, op1, op2, invert);
+    clock_t end = clock();
+    return "===================="
+            "\nINSTRUCCION: "
+            + input
+            + "\nTIEMPO DE EJECUCION: "
+            + to_string(((end - init)*1000)/CLOCKS_PER_SEC)
+            + "ms"
+            + "\nPROCESO: "
+            + to_string(getpid())
+            + "\nOPCODE: "
+            +  opcode
+            + "\nINVERTIDO: "
+            + to_string(invert)
+            + "\nOP1: "
+            + to_string(op1)
+            + "\nOP2: "
+            + to_string(op2)
+            + "\nRESULTADO: "
+            + to_string(std::get<0>(result))
+            + "\nMENSAJE: "
+            + std::get<1>(result)
+            + "\n====================";
+}
+
 // PROCESO PRINCIPAL
 int main() {
     string input_str;
@@ -171,22 +202,21 @@ int main() {
             vector<string> input = split(input_str, ' ');
 
             for (int i = 0; i < input.size(); i++) {
+                // PROCESOS HIJOS
                 pid_t pid = fork();
+                clock_t init = clock();
+
                 if (pid < 0) {
                     perror("fork not created");
                     exit(EXIT_FAILURE);
+
                 } else if (pid == 0) {
+                    // VALIDAR INSTRUCCION
                     if (validarInput(input[i])) {
-                        cout << "INSTRUCCION " << input[i] << " EN EL PROCESO " << getpid() << " RESULTADO:  ";
-                        int result = applyOps(
-                            getOpCode(input[i]),
-                            getOp1(input[i]),
-                            getOp2(input[i]),
-                            opInvert(input[i])
-                        );
-                        if (result != NULL) {
-                            cout << result<< endl;
-                        }
+
+                        // OBTENER PARAMETROS DE LA INSTRUCCION DE 8 BITS
+                        string result = processInstruction(input[i], init);
+                        cout << result << endl;
 
                     } else {
                         cout << "ERROR ENTRADA INVALIDA" << endl;
@@ -195,6 +225,7 @@ int main() {
                 }
             }
 
+            // ESPERAR A LOS PROCESOS HIJOS
             for (int i = 0; i < input.size(); i++) {
                 wait(nullptr);
             }
@@ -206,42 +237,3 @@ int main() {
     }
     return 0;
 }
-
-
-
-/*
-for (int i = 0; i < input.size(); i++) {
-    if (validarInput(input[i])) {
-        pid_t pid = fork();
-        cout << "PROCESANDO " << input[i] << " EN EL PROCESO " << pid << endl;
-
-        if (pid < 0) {
-            perror("fork not created " + pid);
-            exit(EXIT_FAILURE);
-        } else if (pid == 0) {
-            int result = applyOps(
-                getOpCode(input[i]),
-                getOp1(input[i]),
-                getOp2(input[i]),
-                opInvert(input[i])
-            )  ;
-            if (result != NULL) {
-                cout << result << endl;
-            }
-
-            // Código del proceso hijo
-            cout << "Child Process: " << i + 1
-                 << ", PID: " << getpid()
-                 << ", RESULTADO: " << result << endl;
-            exit(EXIT_SUCCESS);
-        }
-        // El padre espera a todos los hijos
-        for (int j = 0; j < input.size(); i++) {
-            wait(nullptr);
-        }
-    } else {
-        cout << "ERROR ENTRADA INVALIDA" << endl;
-    }
-}
-
-*/
